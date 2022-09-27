@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
+	"github.com/MullionGroup/godal"
+	"github.com/MullionGroup/osio"
+	"github.com/MullionGroup/osio/gcs"
 	"github.com/airbusgeo/cogger"
-	"github.com/airbusgeo/godal"
-	"github.com/airbusgeo/osio"
-	"github.com/airbusgeo/osio/gcs"
 	"github.com/spf13/cobra"
 )
 

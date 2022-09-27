@@ -29,8 +29,8 @@ import (
 	"testing"
 
 	"cloud.google.com/go/storage"
-	"github.com/airbusgeo/osio"
-	"github.com/airbusgeo/osio/gcs"
+	"github.com/MullionGroup/osio"
+	"github.com/MullionGroup/osio/gcs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
@@ -3432,8 +3432,8 @@ type errLogger struct {
 	thresh ErrorCategory
 }
 
-//this is an example error handler that returns an error if its level is over thresh,
-//or logs the message in its msg []string if under
+// this is an example error handler that returns an error if its level is over thresh,
+// or logs the message in its msg []string if under
 func (e *errLogger) ErrorHandler(ec ErrorCategory, code int, message string) error {
 	if ec >= e.thresh {
 		return errors.New(message)
