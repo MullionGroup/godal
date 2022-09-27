@@ -64,8 +64,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/MullionGroup/errs v0.0.0-20220927043105-651cb82b9347 h1:UlSP1PzE7B1z0WATdMmAIakjV60XaAuvsFHyuItiqCs=
 github.com/MullionGroup/errs v0.0.0-20220927043105-651cb82b9347/go.mod h1:Z7XTAvDwMoIaRFsUj91AIFhRX4wJapSkuywuzv86478=
-github.com/MullionGroup/osio v0.0.0-20220927043943-1b35f90ed8c5 h1:+scnxH/AwzRhcytNVT+09Fr+WUraLXoteiIm0leuG70=
-github.com/MullionGroup/osio v0.0.0-20220927043943-1b35f90ed8c5/go.mod h1:411ZhD0V28GljXdKxDVRGe7Tl38sz6KMAsT2hMrFepk=
+github.com/MullionGroup/osio v0.0.0-20220927152033-5a1ce6968c66 h1:bubDIOZ2E4yrDwGyzpw1knR/80CBvnGwNWqKdOY69nw=
+github.com/MullionGroup/osio v0.0.0-20220927152033-5a1ce6968c66/go.mod h1:lXZ0Q4fw6gFOMrZtUz9iI74MvCCZ20vivMTW6g9mA7I=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/airbusgeo/cogger v0.0.7 h1:H6MVvt3RzZrWLJUwU3g77HrpCcpJ3/roujTixCRqQ54=
 github.com/airbusgeo/cogger v0.0.7/go.mod h1:kCWuN4IVKpUiLzGKrqsZHPYbN24nyyrRuAa/vX2eURk=
@@ -197,6 +197,8 @@ github.com/googleapis/go-type-adapters v1.0.0/go.mod h1:zHW75FOG2aur7gAO2B+MLby+
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
 github.com/hashicorp/golang-lru v0.5.0/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
 github.com/hashicorp/golang-lru v0.5.1/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
+github.com/hashicorp/golang-lru v0.5.4 h1:YDjusn29QI/Das2iO9M0BHnIbxPeyuCHsjMW+lJfyTc=
+github.com/hashicorp/golang-lru v0.5.4/go.mod h1:iADmTwqILo4mZ8BN3D2Q6+9jd8WM5uGBxy+E8yxSoD4=
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/inconshreveable/mousetrap v1.0.0 h1:Z8tu5sraLXCXIcARxBp/8cbvlwVa7Z1NHg9XEKhtSvM=
