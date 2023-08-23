@@ -135,6 +135,11 @@ void godalClearMetadata(cctx *ctx, GDALMajorObjectH mo, char *cdom) {
 	}
 	godalUnwrap();
 }
+void godalSetDescription(cctx *ctx, GDALMajorObjectH mo, char *desc) {
+	godalWrap(ctx);
+	GDALSetDescription(mo,desc);
+	godalUnwrap();
+}
 
 void godalSetRasterColorInterpretation(cctx *ctx, GDALRasterBandH bnd, GDALColorInterp ci) {
 	godalWrap(ctx);
@@ -454,6 +459,51 @@ void godalDeleteRasterNoDataValue(cctx *ctx, GDALRasterBandH bnd) {
 	godalUnwrap();
 }
 
+void godalSetDatasetScaleOffset(cctx *ctx, GDALDatasetH ds, double scale, double offset) {
+	godalWrap(ctx);
+	int count = GDALGetRasterCount(ds);
+	if(count==0) {
+		CPLError(CE_Failure, CPLE_AppDefined, "cannot set scale and offset on dataset with no raster bands");
+		godalUnwrap();
+		return;
+	}
+	CPLErr ret = CE_None;
+	for(int i=1; i<=count;i++) {
+		CPLErr br;
+
+		br = GDALSetRasterScale(GDALGetRasterBand(ds,i),scale);
+		if(br!=0 && ret==0) {
+			ret = br;
+		}
+		
+		br = GDALSetRasterOffset(GDALGetRasterBand(ds,i),offset);
+		if(br!=0 && ret==0) {
+			ret = br;
+		}
+	}
+	if ( ret != 0 ) {
+		forceCPLError(ctx,ret);
+	}
+	godalUnwrap();
+}
+
+void godalSetRasterScaleOffset(cctx *ctx, GDALRasterBandH bnd, double scale, double offset) {
+	godalWrap(ctx);
+	CPLErr ret;
+
+	ret = GDALSetRasterScale(bnd,scale);
+	if(ret!=0){
+		forceCPLError(ctx,ret);
+	}
+
+	ret = GDALSetRasterOffset(bnd,offset);
+	if(ret!=0){
+		forceCPLError(ctx,ret);
+	}
+
+	godalUnwrap();
+}
+
 GDALRasterBandH godalCreateMaskBand(cctx *ctx, GDALRasterBandH bnd, int flags) {
 	godalWrap(ctx);
 	CPLErr ret = GDALCreateMaskBand(bnd, flags);
@@ -580,7 +630,19 @@ void godalBuildOverviews(cctx *ctx, GDALDatasetH ds, const char *resampling, int
 	godalUnwrap();
 }
 
-void godalDatasetStructure(GDALDatasetH ds, int *sx, int *sy, int *bsx, int *bsy, int *bandCount, int *dtype) {
+void godalBandScaleOffset(GDALRasterBandH bnd, double *scale, double *offset) {
+	int pbSuccess = 0;
+	*scale = GDALGetRasterScale(bnd, &pbSuccess);
+	if (pbSuccess == 0) {
+		*scale = 1;
+	}
+	*offset = GDALGetRasterOffset(bnd, &pbSuccess);
+	if (pbSuccess == 0) {
+		*offset = 0;
+	}
+}
+
+void godalDatasetStructure(GDALDatasetH ds, int *sx, int *sy, int *bsx, int *bsy, double *scale, double *offset, int *bandCount, int *dtype) {
 	*sx=GDALGetRasterXSize(ds);
 	*sy=GDALGetRasterYSize(ds);
 	*bandCount=GDALGetRasterCount(ds);
@@ -590,15 +652,17 @@ void godalDatasetStructure(GDALDatasetH ds, int *sx, int *sy, int *bsx, int *bsy
 		GDALRasterBandH band = GDALGetRasterBand(ds,1);
 		*dtype = GDALGetRasterDataType(band);
 		GDALGetBlockSize(band,bsx,bsy);
+		godalBandScaleOffset(band, scale, offset);
 	}
 }
-void godalBandStructure(GDALRasterBandH bnd, int *sx, int *sy, int *bsx, int *bsy, int *dtype) {
+void godalBandStructure(GDALRasterBandH bnd, int *sx, int *sy, int *bsx, int *bsy, double *scale, double *offset, int *dtype) {
 	*sx=GDALGetRasterBandXSize(bnd);
 	*sy=GDALGetRasterBandYSize(bnd);
 	*dtype=GDT_Unknown;
 	*bsx=*bsy=0;
 	*dtype = GDALGetRasterDataType(bnd);
 	GDALGetBlockSize(bnd, bsx, bsy);
+	godalBandScaleOffset(bnd, scale, offset);
 }
 
 void godalBandRasterIO(cctx *ctx, GDALRasterBandH bnd, GDALRWFlag rw, int nDSXOff, int nDSYOff, int nDSXSize, int nDSYSize, void *pBuffer,
@@ -676,7 +740,7 @@ void godalFillNoData(cctx *ctx, GDALRasterBandH in, GDALRasterBandH mask, int ma
 	godalUnwrap();
 }
 
-GDALDatasetH godalRasterize(cctx *ctx, char *dstName, GDALDatasetH ds, char **switches) {
+GDALDatasetH godalRasterize(cctx *ctx, char *dstName, GDALDatasetH dstDS, GDALDatasetH ds, char **switches) {
 	godalWrap(ctx);
 	GDALRasterizeOptions *ropts = GDALRasterizeOptionsNew(switches,nullptr);
 	if(failed(ctx)) {
@@ -685,7 +749,7 @@ GDALDatasetH godalRasterize(cctx *ctx, char *dstName, GDALDatasetH ds, char **sw
 		return nullptr;
 	}
 	int usageErr=0;
-	GDALDatasetH ret = GDALRasterize(dstName, nullptr, ds, ropts, &usageErr);
+	GDALDatasetH ret = GDALRasterize(dstName, dstDS, ds, ropts, &usageErr);
 	GDALRasterizeOptionsFree(ropts);
 	if(ret==nullptr || usageErr!=0) {
 		forceError(ctx);
@@ -741,6 +805,66 @@ void godalFeatureSetGeometry(cctx *ctx, OGRFeatureH feat, OGRGeometryH geom) {
 	godalUnwrap();
 }
 
+void godalFeatureSetFieldInteger(cctx *ctx, OGRFeatureH feat, int fieldIndex, int value) {
+	godalWrap(ctx);
+	OGR_F_SetFieldInteger(feat, fieldIndex, value);
+	godalUnwrap();
+}
+
+void godalFeatureSetFieldInteger64(cctx *ctx, OGRFeatureH feat, int fieldIndex, long long value) {
+	godalWrap(ctx);
+	OGR_F_SetFieldInteger64(feat, fieldIndex, value);
+	godalUnwrap();
+}
+
+void godalFeatureSetFieldDouble(cctx *ctx, OGRFeatureH feat, int fieldIndex, double value) {
+	godalWrap(ctx);
+	OGR_F_SetFieldDouble(feat, fieldIndex, value);
+	godalUnwrap();
+}
+
+void godalFeatureSetFieldString(cctx *ctx, OGRFeatureH feat, int fieldIndex, char *value) {
+	godalWrap(ctx);
+	OGR_F_SetFieldString(feat, fieldIndex, value);
+	godalUnwrap();
+}
+
+void godalFeatureSetFieldDateTime(cctx *ctx, OGRFeatureH feat, int fieldIndex, int year, int month, int day, int hour, int minute, int second, int tzFlag) {
+	godalWrap(ctx);
+	OGR_F_SetFieldDateTime(feat, fieldIndex, year, month, day, hour, minute, second, tzFlag);
+	godalUnwrap();
+}
+
+void godalFeatureSetFieldIntegerList(cctx *ctx, OGRFeatureH feat, int fieldIndex, int nbValues, int *values) {
+	godalWrap(ctx);
+	OGR_F_SetFieldIntegerList(feat, fieldIndex, nbValues, values);
+	godalUnwrap();
+}
+
+void godalFeatureSetFieldInteger64List(cctx *ctx, OGRFeatureH feat, int fieldIndex, int nbValues, long long *values) {
+	godalWrap(ctx);
+	OGR_F_SetFieldInteger64List(feat, fieldIndex, nbValues, values);
+	godalUnwrap();
+}
+
+void godalFeatureSetFieldDoubleList(cctx *ctx, OGRFeatureH feat, int fieldIndex, int nbValues, double *values) {
+	godalWrap(ctx);
+	OGR_F_SetFieldDoubleList(feat, fieldIndex, nbValues, values);
+	godalUnwrap();
+}
+
+void godalFeatureSetFieldStringList(cctx *ctx, OGRFeatureH feat, int fieldIndex, char **values) {
+	godalWrap(ctx);
+	OGR_F_SetFieldStringList(feat, fieldIndex, values);
+	godalUnwrap();
+}
+
+void godalFeatureSetFieldBinary(cctx *ctx, OGRFeatureH feat, int fieldIndex, int nbBytes, void *value) {
+	godalWrap(ctx);
+	OGR_F_SetFieldBinary(feat, fieldIndex, nbBytes, value);
+	godalUnwrap();
+}
+
 void godal_OGR_G_AddGeometry(cctx *ctx, OGRGeometryH geom, OGRGeometryH subGeom) {
 	godalWrap(ctx);
 	OGRErr gret = OGR_G_AddGeometry(geom,subGeom);
@@ -793,6 +917,16 @@ OGRGeometryH godal_OGR_G_GetGeometryRef(cctx *ctx, OGRGeometryH in, int subGeomI
 int godal_OGR_G_Intersects(cctx *ctx, OGRGeometryH geom1, OGRGeometryH geom2) {
 	godalWrap(ctx);
 	int ret = OGR_G_Intersects(geom1, geom2);
+	godalUnwrap();
+	return ret;
+}
+
+OGRGeometryH godal_OGR_G_Intersection(cctx *ctx, OGRGeometryH geom1, OGRGeometryH geom2) {
+	godalWrap(ctx);
+	OGRGeometryH ret = OGR_G_Intersection(geom1, geom2);
+	if(ret==nullptr) {
+		forceError(ctx);
+	}
 	godalUnwrap();
 	return ret;
 }
@@ -1193,7 +1327,7 @@ namespace cpl
     /*                     VSIGoFilesystemHandler                         */
     /************************************************************************/
 
-    class VSIGoFilesystemHandler : public VSIFilesystemHandler
+    class VSIGoFilesystemHandler final : public VSIFilesystemHandler
     {
         CPL_DISALLOW_COPY_ASSIGN(VSIGoFilesystemHandler)
     private:
@@ -1222,7 +1356,7 @@ namespace cpl
     /*                           VSIGoHandle                              */
     /************************************************************************/
 
-    class VSIGoHandle : public VSIVirtualHandle
+    class VSIGoHandle final : public VSIVirtualHandle
     {
         CPL_DISALLOW_COPY_ASSIGN(VSIGoHandle)
     private:
@@ -1234,6 +1368,10 @@ namespace cpl
         VSIGoHandle(const char *filename, vsi_l_offset size);
         ~VSIGoHandle() override;
 
+#if GDAL_VERSION_NUM >= 3060000
+		  bool HasPRead() const override;
+		  size_t PRead(void * /*pBuffer*/, size_t /* nSize */, vsi_l_offset /*nOffset*/) const override;
+#endif
         vsi_l_offset Tell() override;
         int Seek(vsi_l_offset nOffset, int nWhence) override;
         size_t Read(void *pBuffer, size_t nSize, size_t nCount) override;
@@ -1331,7 +1469,28 @@ namespace cpl
         return readblocks;
     }
 
-    int VSIGoHandle::ReadMultiRange(int nRanges, void **ppData, const vsi_l_offset *panOffsets, const size_t *panSizes)
+#if GDAL_VERSION_NUM >= 3060000
+	 bool VSIGoHandle::HasPRead() const
+	 {
+		 return true;
+	 }
+	 size_t VSIGoHandle::PRead( void* pBuffer, size_t nSize, vsi_l_offset nOffset ) const
+	 {
+		 char *err = nullptr;
+		 _gogdalMultiReadCallback(m_filename, 1, &pBuffer, (void *)&nOffset, (void *)&nSize,
+														&err);
+		 if (err)
+		 {
+			 CPLError(CE_Failure, CPLE_AppDefined, "%s", err);
+			 errno = EIO;
+			 free(err);
+			 return 0;
+		 }
+		 return nSize;
+	 }
+#endif
+
+	 int VSIGoHandle::ReadMultiRange(int nRanges, void **ppData, const vsi_l_offset *panOffsets, const size_t *panSizes)
     {
         int iRange;
         int nMergedRanges = 1;
@@ -1524,7 +1683,6 @@ void VSIInstallGoHandler(cctx *ctx, const char *pszPrefix, size_t bufferSize, si
     VSIFileManager::InstallHandler(sPrefix, poHandler);
 	godalUnwrap();
 }
-
 
 void test_godal_error_handling(cctx *ctx) {
 	godalWrap(ctx);

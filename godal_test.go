@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/MullionGroup/osio"
@@ -174,6 +175,9 @@ func TestCreate(t *testing.T) {
 	assert.Error(t, err)
 
 	ds, err := Create(GTiff, tmpname, 1, Byte, 20, 20)
+	driver := ds.Driver()
+	assert.Equal(t, "GeoTIFF", driver.LongName())
+	assert.Equal(t, "GTiff", driver.ShortName())
 	assert.NoError(t, err)
 	ds.Close()
 
@@ -292,6 +296,9 @@ func TestVectorCreate(t *testing.T) {
 	tf = tempfile()
 	defer os.Remove(tf)
 	ds, err := CreateVector(GeoJSON, tf)
+	driver := ds.Driver()
+	assert.Equal(t, "GeoJSON", driver.LongName())
+	assert.Equal(t, "GeoJSON", driver.ShortName())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,6 +485,8 @@ func TestBands(t *testing.T) {
 	bst := bands[0].Structure()
 	assert.Equal(t, 256, bst.BlockSizeX)
 	assert.Equal(t, 256, bst.BlockSizeY)
+	assert.Equal(t, 1.0, bst.Scale)
+	assert.Equal(t, 0.0, bst.Offset)
 	dt := bands[1].Structure().DataType
 	assert.Equal(t, Byte, dt)
 	assert.Equal(t, "Byte", dt.String())
@@ -511,6 +520,34 @@ func TestNoData(t *testing.T) {
 	nd, ok = bands[0].NoData()
 	assert.Equal(t, 101.0, nd)
 	assert.Equal(t, true, ok)
+}
+
+func TestSetScale(t *testing.T) {
+	ds, err := Create(Memory, "ffff", 2, Byte, 20, 20)
+	require.NoError(t, err)
+	defer ds.Close()
+	bands := ds.Bands()
+	err = bands[1].SetScaleOffset(100, 100)
+	assert.NoError(t, err)
+	ehc := eh()
+	err = bands[1].SetScaleOffset(100, 100, ErrLogger(ehc.ErrorHandler))
+	assert.NoError(t, err)
+	st := bands[1].Structure()
+	assert.Equal(t, 100.0, st.Scale)
+	assert.Equal(t, 100.0, st.Offset)
+	err = bands[1].ClearScaleOffset()
+	assert.NoError(t, err)
+	ehc = eh()
+	err = bands[1].ClearScaleOffset(ErrLogger(ehc.ErrorHandler))
+	assert.NoError(t, err)
+	st = bands[1].Structure()
+	assert.Equal(t, 1.0, st.Scale)
+	assert.Equal(t, 0.0, st.Offset)
+	err = ds.SetScaleOffset(101, 101)
+	assert.NoError(t, err)
+	st = bands[0].Structure()
+	assert.Equal(t, 101.0, st.Scale)
+	assert.Equal(t, 101.0, st.Offset)
 }
 
 func TestStructure(t *testing.T) {
@@ -1030,6 +1067,14 @@ func TestMetadata(t *testing.T) {
 	assert.NoError(t, err)
 	err = ds.SetMetadata("foo2", "bar2", Domain("baz"))
 	assert.NoError(t, err)
+
+	err = ds.SetDescription("desc")
+	assert.NoError(t, err)
+	err = ds.SetDescription("desc", ErrLogger(ehc.ErrorHandler))
+	assert.NoError(t, err)
+
+	desc := ds.Description()
+	assert.Equal(t, "desc", desc)
 
 	md1 = ds.Metadata("foo")
 	if md1 != "bar" {
@@ -2314,13 +2359,53 @@ func TestRasterize(t *testing.T) {
 
 }
 
+func TestRasterizeInto(t *testing.T) {
+	vds, _ := Open("testdata/test.geojson")
+	//ext is 100,0,101,1
+	defer vds.Close()
+	mds, err := Create(Memory, "", 3, Byte, 3, 3)
+	assert.NoError(t, err)
+	defer mds.Close()
+	_ = mds.SetGeoTransform([6]float64{99.1, 1, 0, 1.9, 0, -1}) //set extent to 99.1,-0.9,102.1,1.9
+	bnds := mds.Bands()
+
+	for _, bnd := range bnds {
+		_ = bnd.Fill(255, 0)
+	}
+	data := make([]byte, 27) //to extract a 3x3 window
+
+	assert.Error(t, mds.RasterizeInto(vds, nil)) //missing srs
+	ehc := eh()
+	assert.Error(t, mds.RasterizeInto(vds, nil, ErrLogger(ehc.ErrorHandler)))
+
+	sr, err := NewSpatialRefFromEPSG(4326)
+	assert.NoError(t, err)
+	assert.NoError(t, mds.SetSpatialRef(sr))
+	assert.NoError(t, mds.RasterizeInto(vds, []string{"-burn", "0"}))
+
+	_ = mds.Read(0, 0, data, 3, 3)
+	assert.Equal(t, []byte{255, 255, 255}, data[0:3])
+	assert.Equal(t, []byte{0, 255, 255}, data[12:15])
+	assert.Equal(t, []byte{255, 255, 255}, data[24:27])
+
+	for _, bnd := range bnds {
+		_ = bnd.Fill(255, 0)
+	}
+	assert.NoError(t, mds.RasterizeInto(vds, []string{"-burn", "0", "-at"}))
+
+	_ = mds.Read(0, 0, data, 3, 3)
+	assert.Equal(t, []byte{0, 255, 255}, data[0:3])
+	assert.Equal(t, []byte{0, 255, 255}, data[12:15])
+	assert.Equal(t, []byte{255, 255, 255}, data[24:27])
+
+}
 func TestRasterizeGeometries(t *testing.T) {
 	vds, _ := Open("testdata/test.geojson")
 	//ext is 100,0,101,1
 	defer vds.Close()
-	mds, _ := Create(Memory, "", 3, Byte, 300, 300)
+	mds, _ := Create(Memory, "", 3, Byte, 3, 3)
 	defer mds.Close()
-	_ = mds.SetGeoTransform([6]float64{99, 0.01, 0, 2, 0, -0.01}) //set extent to 99,-1,102,2
+	_ = mds.SetGeoTransform([6]float64{99.1, 1, 0, 1.9, 0, -1}) //set extent to 99.1,-0.9,102.1,1.9
 	bnds := mds.Bands()
 
 	ff := vds.Layers()[0].NextFeature().Geometry()
@@ -2328,41 +2413,44 @@ func TestRasterizeGeometries(t *testing.T) {
 	for _, bnd := range bnds {
 		_ = bnd.Fill(255, 0)
 	}
-	data := make([]byte, 300) //to extract a 10x10 window
+	data := make([]byte, 27) //to extract a 3x3 window
 
 	err := mds.RasterizeGeometry(ff)
 	assert.NoError(t, err)
-	_ = mds.Read(95, 95, data, 10, 10)
+	_ = mds.Read(0, 0, data, 3, 3)
 	assert.Equal(t, []byte{255, 255, 255}, data[0:3])
-	assert.Equal(t, []byte{0, 0, 0}, data[297:300])
+	assert.Equal(t, []byte{0, 0, 0}, data[12:15])
+	assert.Equal(t, []byte{255, 255, 255}, data[24:27])
 
-	alldata1 := make([]byte, 300*300*3)
-	_ = mds.Read(0, 0, alldata1, 300, 300)
-	alldata2 := make([]byte, 300*300*3)
+	alldata1 := make([]byte, 3*3*3)
+	_ = mds.Read(0, 0, alldata1, 3, 3)
+	alldata2 := make([]byte, 3*3*3)
+
+	//with alltouched we will light up more than just the center pixel
 	err = mds.RasterizeGeometry(ff, AllTouched())
 	assert.NoError(t, err)
-	_ = mds.Read(0, 0, alldata2, 300, 300)
+	_ = mds.Read(0, 0, alldata2, 3, 3)
 	assert.NotEqual(t, alldata1, alldata2)
 
 	err = mds.RasterizeGeometry(ff, Values(200))
 	assert.NoError(t, err)
-	_ = mds.Read(95, 95, data, 10, 10)
-	assert.Equal(t, []byte{200, 200, 200}, data[297:300])
+	_ = mds.Read(0, 0, data, 3, 3)
+	assert.Equal(t, []byte{200, 200, 200}, data[12:15])
 
 	err = mds.RasterizeGeometry(ff, Bands(0), Values(100))
 	assert.NoError(t, err)
-	_ = mds.Read(95, 95, data, 10, 10)
-	assert.Equal(t, []byte{100, 200, 200}, data[297:300])
+	_ = mds.Read(0, 0, data, 3, 3)
+	assert.Equal(t, []byte{100, 200, 200}, data[12:15])
 
 	err = mds.RasterizeGeometry(ff, Values(1, 2, 3))
 	assert.NoError(t, err)
-	_ = mds.Read(95, 95, data, 10, 10)
-	assert.Equal(t, []uint8{1, 2, 3}, data[297:300])
+	_ = mds.Read(0, 0, data, 3, 3)
+	assert.Equal(t, []uint8{1, 2, 3}, data[12:15])
 
 	err = mds.RasterizeGeometry(ff, Bands(0, 1), Values(5, 6))
 	assert.NoError(t, err)
-	_ = mds.Read(95, 95, data, 10, 10)
-	assert.Equal(t, []uint8{5, 6, 3}, data[297:300])
+	_ = mds.Read(0, 0, data, 3, 3)
+	assert.Equal(t, []uint8{5, 6, 3}, data[12:15])
 
 	err = mds.RasterizeGeometry(ff, Bands(0), Values(1, 2))
 	assert.Error(t, err)
@@ -2700,6 +2788,27 @@ func TestGeometryDifference(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestGeometryIntersection(t *testing.T) {
+	sr, _ := NewSpatialRefFromEPSG(4326)
+	defer sr.Close()
+
+	polyStr := "POLYGON ((0 0,2 0,2 2,0 2,0 0))"
+	polyGeom1, _ := NewGeometryFromWKT(polyStr, sr)
+	polyStr = "POLYGON ((1 1,3 1,3 3,1 3,1 1))"
+	polyGeom2, _ := NewGeometryFromWKT(polyStr, sr)
+
+	intersectionGeom, err := polyGeom1.Intersection(polyGeom2)
+	assert.NoError(t, err)
+	assert.Equal(t, intersectionGeom.Area(), 1.0)
+
+	_, err = polyGeom1.Intersection(&Geometry{})
+	assert.Error(t, err)
+
+	ehc := eh()
+	_, err = (&Geometry{}).Intersection(polyGeom2, ErrLogger(ehc.ErrorHandler))
+	assert.Error(t, err)
+}
+
 func TestGeometryUnion(t *testing.T) {
 	sr, _ := NewSpatialRefFromEPSG(4326)
 	defer sr.Close()
@@ -2709,9 +2818,9 @@ func TestGeometryUnion(t *testing.T) {
 	polyStr = "POLYGON ((1 1,3 1,3 3,1 3,1 1))"
 	polyGeom2, _ := NewGeometryFromWKT(polyStr, sr)
 
-	diffGeom, err := polyGeom1.Union(polyGeom2)
+	unionGeom, err := polyGeom1.Union(polyGeom2)
 	assert.NoError(t, err)
-	assert.Equal(t, diffGeom.Area(), 7.0)
+	assert.Equal(t, unionGeom.Area(), 7.0)
 
 	_, err = polyGeom1.Union(&Geometry{})
 	assert.Error(t, err)
@@ -2813,6 +2922,7 @@ func TestMultiPolygonGeometry(t *testing.T) {
 
 	assert.Equal(t, multiPolyGeom.Area(), 18.0)
 	assert.Equal(t, multiPolyGeom.GeometryCount(), 2)
+	assert.Equal(t, multiPolyGeom.Name(), "MULTIPOLYGON")
 	assert.Equal(t, multiPolyGeom.Type(), GTMultiPolygon)
 
 	subGeom, err := multiPolyGeom.SubGeometry(0)
@@ -2859,7 +2969,8 @@ func TestFeatureAttributes(t *testing.T) {
 			"properties": {
 				"strCol":"foobar",
 				"intCol":3,
-				"floatCol":123.4
+				"floatCol":123.4,
+				"dateCol":"2006-01-02T15:04:05",
 			},
 			"geometry": {
 				"type": "Point",
@@ -2879,6 +2990,8 @@ func TestFeatureAttributes(t *testing.T) {
 	ehc := eh()
 	_, err = (&Layer{}).NewFeature(&Geometry{}, ErrLogger(ehc.ErrorHandler))
 	assert.Error(t, err)
+
+	dateFormatRFC3339 := "2006-01-02T15:04:05Z07:00"
 
 	i := 0
 	for {
@@ -2903,6 +3016,8 @@ func TestFeatureAttributes(t *testing.T) {
 			assert.Equal(t, "123.400000", sfield.String())
 			assert.Equal(t, int64(123), sfield.Int())
 			assert.Equal(t, 123.4, sfield.Float())
+			sfield = attrs["dateCol"]
+			assert.Equal(t, "2006-01-02T15:04:05Z", sfield.DateTime().Format(dateFormatRFC3339))
 		}
 		i++
 	}
@@ -2914,8 +3029,19 @@ func TestFeatureAttributes(t *testing.T) {
 		NewFieldDefinition("intCol", FTInt),
 		NewFieldDefinition("int64Col", FTInt64),
 		NewFieldDefinition("floatCol", FTReal),
-		NewFieldDefinition("ignored", FieldType(FTInt64List)),
+		NewFieldDefinition("intListCol", FTIntList),
+		NewFieldDefinition("int64ListCol", FTInt64List),
+		NewFieldDefinition("floatListCol", FTRealList),
+		NewFieldDefinition("stringListCol", FTStringList),
+		NewFieldDefinition("binaryCol", FTBinary),
+		NewFieldDefinition("dateCol", FTDate),
+		NewFieldDefinition("timeCol", FTTime),
+		NewFieldDefinition("dateTimeCol", FTDateTime),
+		NewFieldDefinition("unknownCol", FTUnknown),
 	)
+	assert.NoError(t, err)
+
+	calcuttaLoc, err := time.LoadLocation("Asia/Calcutta")
 	assert.NoError(t, err)
 
 	pnt, _ := NewGeometryFromWKT("POINT (1 1)", nil)
@@ -2923,27 +3049,90 @@ func TestFeatureAttributes(t *testing.T) {
 	assert.NoError(t, err)
 	fc, _ := lyr.FeatureCount()
 	assert.Equal(t, fc, 1)
+	nf.SetGeometryColumnName("no_error")
+	nf.SetFID(99999999999)
 	attrs := nf.Fields()
+	intCol := attrs["intCol"]
+	intCol.ftype = FTString
+	assert.Error(t, nf.SetFieldValue(intCol, "not_int", ErrLogger(ehc.ErrorHandler)))
+	assert.Error(t, nf.SetFieldValue(attrs["strCol"], 0))
+	assert.Error(t, nf.SetFieldValue(attrs["intCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["int64Col"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["floatCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["intListCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["int64ListCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["floatListCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["stringListCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["binaryCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["dateCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["timeCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["dateTimeCol"], ""))
+	assert.Error(t, nf.SetFieldValue(attrs["unknownCol"], ""))
+	assert.NoError(t, nf.SetFieldValue(attrs["strCol"], "foo"))
+	assert.NoError(t, nf.SetFieldValue(attrs["intCol"], 1))
+	assert.NoError(t, nf.SetFieldValue(attrs["int64Col"], int64(2)))
+	assert.NoError(t, nf.SetFieldValue(attrs["floatCol"], 3.0))
+	assert.NoError(t, nf.SetFieldValue(attrs["intListCol"], []int{1, 2, 3}))
+	assert.NoError(t, nf.SetFieldValue(attrs["int64ListCol"], []int64{1, 2, 3}))
+	assert.NoError(t, nf.SetFieldValue(attrs["floatListCol"], []float64{1, 2, 3}))
+	assert.NoError(t, nf.SetFieldValue(attrs["stringListCol"], []string{"1", "2", "3"}))
+	assert.NoError(t, nf.SetFieldValue(attrs["binaryCol"], []byte("foo")))
+	date := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	assert.NoError(t, nf.SetFieldValue(attrs["dateCol"], date))
+	assert.NoError(t, nf.SetFieldValue(attrs["timeCol"], date.In(time.Local)))
+	assert.NoError(t, nf.SetFieldValue(attrs["dateTimeCol"], date.In(calcuttaLoc)))
+	// Reload fields from feature to check if they have been properly set
+	attrs = nf.Fields()
 	sfield := attrs["strCol"]
+	assert.True(t, sfield.IsSet())
 	assert.Equal(t, FTString, sfield.Type())
-	assert.Equal(t, "", sfield.String())
+	assert.Equal(t, "foo", sfield.String())
 	assert.Equal(t, int64(0), sfield.Int())
 	assert.Equal(t, 0.0, sfield.Float())
+	assert.Nil(t, sfield.IntList())
+	assert.Nil(t, sfield.FloatList())
+	assert.Nil(t, sfield.StringList())
+	assert.Nil(t, sfield.Bytes())
+	assert.Nil(t, sfield.DateTime())
 	sfield = attrs["intCol"]
 	assert.Equal(t, FTInt, sfield.Type())
-	assert.Equal(t, "0", sfield.String())
-	assert.Equal(t, int64(0), sfield.Int())
-	assert.Equal(t, 0.0, sfield.Float())
+	assert.Equal(t, "1", sfield.String())
+	assert.Equal(t, int64(1), sfield.Int())
+	assert.Equal(t, 1.0, sfield.Float())
 	sfield = attrs["int64Col"]
 	assert.Equal(t, FTInt64, sfield.Type())
-	assert.Equal(t, "0", sfield.String())
-	assert.Equal(t, int64(0), sfield.Int())
-	assert.Equal(t, 0.0, sfield.Float())
+	assert.Equal(t, "2", sfield.String())
+	assert.Equal(t, int64(2), sfield.Int())
+	assert.Equal(t, 2.0, sfield.Float())
 	sfield = attrs["floatCol"]
 	assert.Equal(t, FTReal, sfield.Type())
-	assert.Equal(t, "0.000000", sfield.String())
-	assert.Equal(t, int64(0), sfield.Int())
-	assert.Equal(t, 0.0, sfield.Float())
+	assert.Equal(t, "3.000000", sfield.String())
+	assert.Equal(t, int64(3), sfield.Int())
+	assert.Equal(t, 3.0, sfield.Float())
+	sfield = attrs["intListCol"]
+	assert.Equal(t, FTIntList, sfield.Type())
+	assert.Equal(t, []int64{1, 2, 3}, sfield.IntList())
+	sfield = attrs["int64ListCol"]
+	assert.Equal(t, FTInt64List, sfield.Type())
+	assert.Equal(t, []int64{1, 2, 3}, sfield.IntList())
+	sfield = attrs["floatListCol"]
+	assert.Equal(t, FTRealList, sfield.Type())
+	assert.Equal(t, []float64{1, 2, 3}, sfield.FloatList())
+	sfield = attrs["stringListCol"]
+	assert.Equal(t, FTStringList, sfield.Type())
+	assert.Equal(t, []string{"1", "2", "3"}, sfield.StringList())
+	sfield = attrs["binaryCol"]
+	assert.Equal(t, FTBinary, sfield.Type())
+	assert.Equal(t, []byte("foo"), sfield.Bytes())
+	sfield = attrs["dateCol"]
+	assert.Equal(t, FTDate, sfield.Type())
+	assert.Equal(t, date.Format(dateFormatRFC3339), sfield.DateTime().Format(dateFormatRFC3339))
+	sfield = attrs["timeCol"]
+	assert.Equal(t, FTTime, sfield.Type())
+	assert.Equal(t, date.In(time.Local).Format(dateFormatRFC3339), sfield.DateTime().Format(dateFormatRFC3339))
+	sfield = attrs["dateTimeCol"]
+	assert.Equal(t, FTDateTime, sfield.Type())
+	assert.Equal(t, date.In(calcuttaLoc).Format(dateFormatRFC3339), sfield.DateTime().Format(dateFormatRFC3339))
 
 	nf, err = lyr.NewFeature(nil)
 	assert.NoError(t, err)
@@ -3468,6 +3657,10 @@ func TestErrorHandling(t *testing.T) {
 	err = testErrorAndLogging(ErrLogger(el.ErrorHandler))
 	assert.EqualError(t, err, "this is a failure message")
 	assert.Equal(t, []string{"this is a warning message"}, el.msg)
+
+	//warning message should not show up
+	err = testErrorAndLogging(SkipWarnings)
+	assert.EqualError(t, err, "this is a failure message")
 }
 
 type debugLogger struct {

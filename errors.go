@@ -117,6 +117,7 @@ func ErrLogger(fn ErrorHandler) interface {
 	GMLExportOption
 	HistogramOption
 	IntersectsOption
+	IntersectionOption
 	MetadataOption
 	NewFeatureOption
 	NewGeometryOption
@@ -124,10 +125,14 @@ func ErrLogger(fn ErrorHandler) interface {
 	PolygonizeOption
 	RasterizeGeometryOption
 	RasterizeOption
+	RasterizeIntoOption
 	SetColorInterpOption
 	SetColorTableOption
+	SetDescriptionOption
 	SetGeometryOption
+	SetFieldValueOption
 	SetNoDataOption
+	SetScaleOffsetOption
 	SetGeoTransformOption
 	SetProjectionOption
 	SetSpatialRefOption
@@ -165,9 +170,6 @@ func (ec errorCallback) setBoundsOpt(o *boundsOpts) {
 	o.errorHandler = ec.fn
 }
 func (ec errorCallback) setBufferOpt(o *bufferOpts) {
-	o.errorHandler = ec.fn
-}
-func (ec errorCallback) setIntersectsOpt(o *intersectsOpts) {
 	o.errorHandler = ec.fn
 }
 func (ec errorCallback) setBuildOverviewsOpt(o *buildOvrOpts) {
@@ -254,7 +256,16 @@ func (ec errorCallback) setGMLExportOpt(o *gmlExportOpts) {
 func (ec errorCallback) setHistogramOpt(o *histogramOpts) {
 	o.errorHandler = ec.fn
 }
+func (ec errorCallback) setIntersectsOpt(o *intersectsOpts) {
+	o.errorHandler = ec.fn
+}
+func (ec errorCallback) setIntersectionOpt(o *intersectionOpts) {
+	o.errorHandler = ec.fn
+}
 func (ec errorCallback) setMetadataOpt(o *metadataOpts) {
+	o.errorHandler = ec.fn
+}
+func (ec errorCallback) setDescriptionOpt(o *setDescriptionOpts) {
 	o.errorHandler = ec.fn
 }
 func (ec errorCallback) setNewFeatureOpt(o *newFeatureOpts) {
@@ -275,6 +286,9 @@ func (ec errorCallback) setRasterizeGeometryOpt(o *rasterizeGeometryOpts) {
 func (ec errorCallback) setRasterizeOpt(o *rasterizeOpts) {
 	o.errorHandler = ec.fn
 }
+func (ec errorCallback) setRasterizeIntoOpt(o *rasterizeIntoOpts) {
+	o.errorHandler = ec.fn
+}
 func (ec errorCallback) setSetColorInterpOpt(ndo *setColorInterpOpts) {
 	ndo.errorHandler = ec.fn
 }
@@ -282,6 +296,9 @@ func (ec errorCallback) setSetColorTableOpt(ndo *setColorTableOpts) {
 	ndo.errorHandler = ec.fn
 }
 func (ec errorCallback) setSetGeometryOpt(o *setGeometryOpts) {
+	o.errorHandler = ec.fn
+}
+func (ec errorCallback) setSetFieldValueOpt(o *setFieldValueOpts) {
 	o.errorHandler = ec.fn
 }
 func (ec errorCallback) setSetGeoTransformOpt(o *setGeoTransformOpts) {
@@ -292,6 +309,9 @@ func (ec errorCallback) setSetProjectionOpt(o *setProjectionOpts) {
 }
 func (ec errorCallback) setSetNoDataOpt(ndo *setNodataOpts) {
 	ndo.errorHandler = ec.fn
+}
+func (ec errorCallback) setSetScaleOffsetOpt(soo *setScaleOffsetOpts) {
+	soo.errorHandler = ec.fn
 }
 func (ec errorCallback) setSetSpatialRefOpt(ndo *setSpatialRefOpts) {
 	ndo.errorHandler = ec.fn
@@ -400,3 +420,11 @@ func combine(e1, e2 error) error {
 		return &multiError{errs: []error{e1, e2}}
 	}
 }
+
+var SkipWarnings = ErrLogger(
+	func(ec ErrorCategory, code int, message string) error {
+		if ec > CE_Warning {
+			return errors.New(message)
+		}
+		return nil
+	})

@@ -36,6 +36,7 @@ extern "C" {
 		char **configOptions;
 	} cctx;
 	void godalSetMetadataItem(cctx *ctx, GDALMajorObjectH mo, char *ckey, char *cval, char *cdom);
+	void godalSetDescription(cctx *ctx, GDALMajorObjectH mo, char *desc);
 	void godalClearMetadata(cctx *ctx, GDALMajorObjectH mo, char *cdom);
 	GDALDatasetH godalOpen(cctx *ctx, const char *name, unsigned int nOpenFlags, const char *const *papszAllowedDrivers,
 						   const char *const *papszOpenOptions, const char *const *papszSiblingFiles);
@@ -56,6 +57,8 @@ extern "C" {
 	void godalSetRasterNoDataValue(cctx *ctx, GDALRasterBandH bnd, double nd);
 	void godalSetDatasetNoDataValue(cctx *ctx, GDALDatasetH bnd, double nd);
 	void godalDeleteRasterNoDataValue(cctx *ctx, GDALRasterBandH bnd);
+	void godalSetRasterScaleOffset(cctx *ctx, GDALRasterBandH bnd, double scale, double offset);
+	void godalSetDatasetScaleOffset(cctx *ctx, GDALDatasetH bnd, double scale, double offset);
 	void godalSetRasterColorInterpretation(cctx *ctx, GDALRasterBandH bnd, GDALColorInterp ci);
 	GDALRasterBandH godalCreateMaskBand(cctx *ctx, GDALRasterBandH bnd, int flags);
 	GDALRasterBandH godalCreateDatasetMaskBand(cctx *ctx, GDALDatasetH ds, int flags);
@@ -75,13 +78,13 @@ extern "C" {
 	GDALDatasetH godalDatasetWarp(cctx *ctx, char *dstName, int nSrcCount, GDALDatasetH *srcDS, char **switches);
 	void godalDatasetWarpInto(cctx *ctx, GDALDatasetH dstDs,  int nSrcCount, GDALDatasetH *srcDS, char **switches);
 	GDALDatasetH godalDatasetVectorTranslate(cctx *ctx, char *dstName, GDALDatasetH ds, char **switches);
-	GDALDatasetH godalRasterize(cctx *ctx, char *dstName, GDALDatasetH ds, char **switches);
+	GDALDatasetH godalRasterize(cctx *ctx, char *dstName, GDALDatasetH dstDS, GDALDatasetH ds, char **switches);
 	void godalRasterizeGeometry(cctx *ctx, GDALDatasetH ds, OGRGeometryH geom, int *bands, int nBands, double *vals, int allTouched);
 	void godalBuildOverviews(cctx *ctx, GDALDatasetH ds, const char *resampling, int nLevels, int *levels, int nBands, int *bands);
 	void godalClearOverviews(cctx *ctx, GDALDatasetH ds);
 
-	void godalDatasetStructure(GDALDatasetH ds, int *sx, int *sy, int *bsx, int *bsy, int *bandCount, int *dtype);
-	void godalBandStructure(GDALRasterBandH bnd, int *sx, int *sy, int *bsx, int *bsy, int *dtype);
+	void godalDatasetStructure(GDALDatasetH ds, int *sx, int *sy, int *bsx, int *bsy, double *scale, double *offset, int *bandCount, int *dtype);
+	void godalBandStructure(GDALRasterBandH bnd, int *sx, int *sy, int *bsx, int *bsy, double *scale, double *offset, int *dtype);
 	void godalDatasetRasterIO(cctx *ctx, GDALDatasetH ds, GDALRWFlag rw, int nDSXOff, int nDSYOff, int nDSXSize, int nDSYSize, void *pBuffer,
 		int nBXSize, int nBYSize, GDALDataType eBDataType, int nBandCount, int *panBandCount,
 		int nPixelSpace, int nLineSpace, int nBandSpace, GDALRIOResampleAlg alg);
@@ -99,6 +102,16 @@ extern "C" {
 	OGRFeatureH godalLayerNewFeature(cctx *ctx, OGRLayerH layer, OGRGeometryH geom);
 	void godalLayerDeleteFeature(cctx *ctx, OGRLayerH layer, OGRFeatureH feat);
 	void godalFeatureSetGeometry(cctx *ctx, OGRFeatureH feat, OGRGeometryH geom);
+	void godalFeatureSetFieldInteger(cctx *ctx, OGRFeatureH feat, int fieldIndex, int value);
+	void godalFeatureSetFieldInteger64(cctx *ctx, OGRFeatureH feat, int fieldIndex, long long value);
+	void godalFeatureSetFieldDouble(cctx *ctx, OGRFeatureH feat, int fieldIndex, double value);
+	void godalFeatureSetFieldString(cctx *ctx, OGRFeatureH feat, int fieldIndex, char *value);
+	void godalFeatureSetFieldDateTime(cctx *ctx, OGRFeatureH feat, int fieldIndex, int year, int month, int day, int hour, int minute, int second, int tzFlag);
+	void godalFeatureSetFieldIntegerList(cctx *ctx, OGRFeatureH feat, int fieldIndex, int nbValues, int *values);
+	void godalFeatureSetFieldInteger64List(cctx *ctx, OGRFeatureH feat, int fieldIndex, int nbValues, long long *values);
+	void godalFeatureSetFieldDoubleList(cctx *ctx, OGRFeatureH feat, int fieldIndex, int nbValues, double *values);
+	void godalFeatureSetFieldStringList(cctx *ctx, OGRFeatureH feat, int fieldIndex, char **values);
+	void godalFeatureSetFieldBinary(cctx *ctx, OGRFeatureH feat, int fieldIndex, int nbBytes, void *value);
 	OGRLayerH godalCreateLayer(cctx *ctx, GDALDatasetH ds, char *name, OGRSpatialReferenceH sr, OGRwkbGeometryType gtype);
 	OGRLayerH godalCopyLayer(cctx *ctx, GDALDatasetH ds, OGRLayerH layer, char *name);
 	void VSIInstallGoHandler(cctx *ctx, const char *pszPrefix, size_t bufferSize, size_t cacheSize);
@@ -118,6 +131,7 @@ extern "C" {
 	OGRGeometryH godal_OGR_G_Difference(cctx *ctx, OGRGeometryH geom1, OGRGeometryH geom2);
 	OGRGeometryH godal_OGR_G_GetGeometryRef(cctx *ctx, OGRGeometryH in, int subGeomIndex);
 	int godal_OGR_G_Intersects(cctx *ctx, OGRGeometryH geom1, OGRGeometryH geom2);
+	OGRGeometryH godal_OGR_G_Intersection(cctx *ctx, OGRGeometryH geom1, OGRGeometryH geom2);
 	OGRGeometryH godal_OGR_G_Union(cctx *ctx, OGRGeometryH geom1, OGRGeometryH geom2);
 	OGRGeometryH godalNewGeometryFromGeoJSON(cctx *ctx, char *geoJSON);
 	OGRGeometryH godalNewGeometryFromWKT(cctx *ctx, char *wkt, OGRSpatialReferenceH sr);
